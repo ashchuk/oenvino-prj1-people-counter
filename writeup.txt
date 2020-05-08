@@ -1,0 +1,117 @@
+# Project Write-Up
+## Explaining Custom Layers
+
+The Inference Engine has a notion of plugins. Plugins are device-specific libraries to perform hardware-assisted inference acceleration.
+Before creating any custom layer with the Inference Engine, you need to consider the target device.
+So, if you want to improve model performance on specific hardware, you can use one of these plugins to make you model working better on target device.
+The Inference Engine supports only CPU and GPU custom kernels.
+It is usually easier to begin with the CPU extension, and debugging with the CPU path, and then switch to the GPU.
+
+Some of the potential reasons for handling custom layers are:
+1) to find with of layers are supported by the plugin for specified device;
+2) to improve model performance on specific device.
+
+## Comparing Model Performance
+
+My method(s) to compare models before and after conversion to Intermediate Representations were:
+1) comparing inference time
+2) using accuracy_checker (https://github.com/opencv/open_model_zoo/tree/master/tools/accuracy_checker)
+
+## Assess Model Use Cases
+
+Some of the potential use cases of the people counter app are:
+1) to count the number of input/output passengers on the bus;
+2) to calculate roominess;
+3) to check the attendance at the university;
+
+Each of these use cases would be useful because it's hard to watch and track large amount of people. This tool can automate this routine operations.
+
+## Assess Effects on End User Needs
+
+Lighting, model accuracy, and camera focal length/image size have different effects on a
+deployed edge model. The potential effects of each of these are as follows:
+1) Subjects are better recognized in bright white light;
+2) Model with overfitting are not good. You should use models with intermediate accuracy level to capture most of desired objects
+3) Camera with high-resolution gains object recognition but downgrades app performance;
+
+## Model Research
+
+[This heading is only required if a suitable model was not found after trying out at least three
+different models. However, you may also use this heading to detail how you converted
+a successful model.]
+
+In investigating potential people counter models, I tried each of the following three models:
+
+######
+  - Model 1: TF Object detection model trained on the COCO dataset v1
+  - Model Source: https://tfhub.dev/tensorflow/tfjs-model/ssd_mobilenet_v1/1/default/1
+                  http://download.tensorflow.org/models/object_detection/ssd_mobilenet_v1_coco_2018_01_28.tar.gz
+  - I converted the model to an Intermediate Representation with the following arguments:
+    python3 \
+    /opt/intel/openvino/deployment_tools/model_optimizer/mo.py \
+    --input_model frozen_inference_graph.pb \
+    --tensorflow_object_detection_api_pipeline_config pipeline.config \
+    --reverse_input_channels \
+    --tensorflow_use_custom_operations_config /opt/intel/openvino/deployment_tools/model_optimizer/extensions/front/tf/ssd_v2_support.json
+  - I started this edge app using this command on my laptop:
+    python3.5 main.py \
+    -i resources/Pedestrain_Detect_2_1_1.mp4 \
+    -m ../models/ssd_mobilenet_v1_coco_2018_01_28/frozen_inference_graph.xml \
+    -d CPU \
+    -pt 0.6 | ffmpeg \
+    -v warning \
+    -f rawvideo -pixel_format bgr24 \
+    -video_size 768x432 -framerate 24 \
+    -i - http://localhost:8090/fac.ffm
+  - I started this edge app using this command in Udacity workspace:
+    python main.py \
+    -i ./resources/Pedestrian_Detect_2_1_1.mp4 \
+    -l /opt/intel/openvino_2019.3.376/deployment_tools/inference_engine/lib/intel64/libcpu_extension_sse4.so \
+    -m ./tf/ssd_mobilenet_v1_coco_2018_01_28/frozen_inference_graph.xml \
+    -d CPU -pt 0.6 | ffmpeg \
+    -v warning \
+    -f rawvideo -pixel_format bgr24 \
+    -video_size 768x432 \
+    -framerate 24 \
+    -i - http://localhost:3001/fac.ffm
+  - The model was sufficient for the app;
+  - I tried to improve the model for the app by...
+######
+  - Model 2: TF Object detection model trained on the COCO dataset v2
+  - Model Source: https://tfhub.dev/tensorflow/tfjs-model/ssd_mobilenet_v2/1/default/1
+                  http://download.tensorflow.org/models/object_detection/ssd_mobilenet_v2_coco_2018_03_29.tar.gz
+  - I converted the model to an Intermediate Representation with the following arguments:
+    python3 \
+    /opt/intel/openvino/deployment_tools/model_optimizer/mo.py \
+    --input_model frozen_inference_graph.pb \
+    --tensorflow_object_detection_api_pipeline_config pipeline.config \
+    --reverse_input_channels \
+    --tensorflow_use_custom_operations_config /opt/intel/openvino/deployment_tools/model_optimizer/extensions/front/tf/ssd_v2_support.json
+
+  - I started this edge app using this command on my laptop:
+    python3.5 main.py -i resources/Pedestrain_Detect_2_1_1.mp4 -m ../models/ssd_mobilenet_v2_coco_2018_03_29/frozen_inference_graph.xml \
+    -d CPU -pt 0.6 | ffmpeg -v warning -f rawvideo \
+    -pixel_format bgr24 -video_size 768x432 \
+    -framerate 24 -i - http://localhost:8090/fac.ffm
+  - I started this edge app using this command in Udacity workspace:
+    python main.py \
+    -i ./resources/Pedestrian_Detect_2_1_1.mp4 -l /opt/intel/openvino_2019.3.376/deployment_tools/inference_engine/lib/intel64/libcpu_extension_sse4.so \
+    -m ./tf/ssd_mobilenet_v2_coco_2018_03_29/frozen_inference_graph.xml \
+    -d CPU -pt 0.6 | ffmpeg -v warning -f rawvideo \
+    -pixel_format bgr24 -video_size 768x432 \
+    -framerate 24 -i - http://localhost:3001/fac.ffm
+  - The model was sufficient for the app;
+######
+  - Model 3: ONNX Single Stage Detector
+  - Model Source: https://github.com/onnx/models/tree/master/vision/object_detection_segmentation/ssd or https://github.com/onnx/models/blob/master/vision/object_detection_segmentation/ssd/model/ssd-10.onnx
+  - I converted the model to an Intermediate Representation with the following arguments
+    python3 /opt/intel/openvino/deployment_tools/model_optimizer/mo.py --input_model model.onnx
+  - The model was insufficient for the app because that has insufficient topology and app throws error like this: "AssertionError: Supports only 4 output topologies."
+######
+  - Model 4: person-detection-retail-0013
+  - Model Source: https://github.com/opencv/open_model_zoo/blob/master/models/intel/person-detection-retail-0013/description/person-detection-retail-0013.md
+    This is a existing Intermediate Representation, I downloaded it using model downloader.
+  - The model was sufficient for the app
+  - I checked Quantization optimization technique on it. I shitched FP32, FP16 and INT8 and I found that FP32, FP16 precision works faster on the edge app by comparing inference time.
+  - I started this edge app using this command in Udacity workspace:
+    python main.py -i ./resources/Pedestrian_Detect_2_1_1.mp4 -l /opt/intel/openvino_2019.3.376/deployment_tools/inference_engine/lib/intel64/libcpu_extension_sse4.so -m ./intel/person-detection-retail-0013/FP32/person-detection-retail-0013.xml -d CPU -pt 0.6 | ffmpeg -v warning -f rawvideo -pixel_format bgr24 -video_size 768x432 -framerate 24 -i - http://localhost:3001/fac.ffm
