@@ -187,7 +187,7 @@ def main():
                 start_time = time.time()
                 total_count = total_count + current_count - last_count
                 client.publish("person", json.dumps({"total": total_count}))
-                #
+                # Refresh rattling counter
                 frame_similarity_count = 0
 
             # Person duration in the video is calculated
