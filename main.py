@@ -35,9 +35,11 @@ from inference import Network
 HOSTNAME = socket.gethostname()
 IPADDRESS = socket.gethostbyname(HOSTNAME)
 MQTT_HOST = IPADDRESS
-MQTT_PORT = 1884
+MQTT_PORT = 3001
 MQTT_KEEPALIVE_INTERVAL = 60
 
+# Rattling frame threshold
+FRAME_THRESHOLD = 10
 
 def build_argparser():
     parser = ArgumentParser()
@@ -64,7 +66,6 @@ def build_argparser():
 
 
 def performance_counts(perf_count):
-
     print("{:<70} {:<15} {:<15} {:<15} {:<10}".format('name', 'layer_type',
                                                       'exec_type', 'status',
                                                       'real_time, us'))
@@ -109,7 +110,7 @@ def main():
     client.connect(MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE_INTERVAL)
 
     args = build_argparser().parse_args()
-
+    frame_similarity_count = 0
     # Flag for the input image
     single_image_mode = False
 
@@ -178,17 +179,25 @@ def main():
                         cv2.FONT_HERSHEY_COMPLEX, 0.5, (200, 10, 10), 1)
 
             # When new person enters the video
-            if current_count > last_count:
+            # First count if that the same person or not, to exclude counter rattling
+            if current_count == last_count:
+                frame_similarity_count += 1
+
+            if (current_count > last_count) and (frame_similarity_count > FRAME_THRESHOLD):
                 start_time = time.time()
                 total_count = total_count + current_count - last_count
                 client.publish("person", json.dumps({"total": total_count}))
+                #
+                frame_similarity_count = 0
 
             # Person duration in the video is calculated
-            if current_count < last_count:
+            if (current_count < last_count) and (frame_similarity_count > FRAME_THRESHOLD):
                 duration = int(time.time() - start_time)
                 # Publish messages to the MQTT server
                 client.publish("person/duration",
                                json.dumps({"duration": duration}))
+                # Refresh rattling counter
+                frame_similarity_count = 0
 
             client.publish("person", json.dumps({"count": current_count}))
             last_count = current_count
