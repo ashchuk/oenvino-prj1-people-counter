@@ -96,6 +96,8 @@ class Network:
 
         self.input_blob = next(iter(self.net.inputs))
         self.out_blob = next(iter(self.net.outputs))
+        print('self.input_blob', self.input_blob)
+        print('self.out_blob', self.out_blob)
         assert len(self.net.inputs.keys()) == input_size, \
             "Supports only {} input topologies".format(len(self.net.inputs))
         assert len(self.net.outputs) == output_size, \

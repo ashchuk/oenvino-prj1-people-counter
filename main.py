@@ -35,10 +35,10 @@ from inference import Network
 HOSTNAME = socket.gethostname()
 IPADDRESS = socket.gethostbyname(HOSTNAME)
 MQTT_HOST = IPADDRESS
-MQTT_PORT = 3001
+MQTT_PORT = 1884
 MQTT_KEEPALIVE_INTERVAL = 60
 
-# Rattling frame threshold
+# Empty frames threshold
 FRAME_THRESHOLD = 10
 
 def build_argparser():
