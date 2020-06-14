@@ -1,5 +1,3 @@
-# %% writefile person_detect.py
-
 import numpy as np
 import time
 from openvino.inference_engine import IENetwork, IECore
@@ -51,7 +49,6 @@ class PersonDetect:
         self.infer_request_handle = None
         self.input_blob = None
 
-
         try:
             self.model = IENetwork(self.model_structure, self.model_weights)
         except Exception as e:
@@ -82,10 +79,22 @@ class PersonDetect:
         wait_process = self.net.requests[request_id].wait(-1)
         return wait_process
 
+    def get_output(self, request_id, output=None):
+        """
+        Gives a list of results for the output layer of the network.
+        :param request_id: Index of Infer request value. Limited to device capabilities.
+        :param output: Name of the output layer
+        :return: Results for the specified request
+        """
+        if output:
+            res = self.infer_request_handle.outputs[output]
+        else:
+            res = self.net.requests[request_id].outputs[self.out_blob]
+        return res
+
     def load_model(self):
         plugin = IECore()
-        self.net = plugin.load_network(network=self.net, device_name="CPU", num_requests=self.num_requests)
-
+        self.net = plugin.load_network(network=self.net, device_name=self.device, num_requests=self.num_requests)
 
     def predict(self, image):
         """
@@ -94,7 +103,8 @@ class PersonDetect:
         :return: Image with bounding boxes (or not?)
         """
         inf_start = time.time()
-        self.net.exec_net(self.current_request_id, image)
+        preprocessed_image = self.preprocess_input(image)
+        self.net.exec_net(self.current_request_id, preprocessed_image)
         # Wait for the result
         if self.net.wait(self.current_request_id) == 0:
             det_time = time.time() - inf_start
@@ -103,7 +113,6 @@ class PersonDetect:
             network_result = self.net.get_output(self.current_request_id)
             bounding_boxes = self.preprocess_outputs(network_result)
             return self.draw_outputs(bounding_boxes, image)
-
 
     def draw_outputs(self, coords, image):
         """
@@ -120,23 +129,27 @@ class PersonDetect:
         result_image = image
         for coords_set in coords[0][0]:
             # Draw bounding box for object
-            xmin = int(coords_set[3] * image_width)
-            ymin = int(coords_set[4] * image_height)
-            xmax = int(coords_set[5] * image_width)
-            ymax = int(coords_set[6] * image_height)
+            xmin = int(coords_set[0] * image_width)
+            ymin = int(coords_set[1] * image_height)
+            xmax = int(coords_set[2] * image_width)
+            ymax = int(coords_set[3] * image_height)
             result_image = cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 55, 255), 1)
         return boxes_result, result_image
 
-
     def preprocess_outputs(self, outputs):
-        # Pass bounding box for object when it's probability is more than the specified threshold
-        raise NotImplementedError
-
+        # Pass bounding box when it's probability is more than the specified threshold
+        bounding_boxes = []
+        probabilities = outputs[0, 0, :, 2]
+        for i, probability in enumerate(probabilities):
+            if probability > self.threshold:
+                box = outputs[0, 0, i, 3:]
+                bounding_boxes.append(box)
+        return bounding_boxes
 
     def preprocess_input(self, image):
         # Load the network to IE plugin to get shape of input layer
         n, c, h, w = self.net.load_model(args.model, args.device, 1, 1,
-                                              self.current_request_id, args.cpu_extension)[1]
+                                         self.current_request_id, args.cpu_extension)[1]
         # Change data layout from HWC to CHW
         result_image = cv2.resize(image, (self.input_shape[1], self.input_shape[2]))
         result_image = result_image.transpose((2, 0, 1))
@@ -193,15 +206,15 @@ def main(args):
 
             coords, image = pd.predict(frame)
             num_people = queue.check_coords(coords)
-            print(f"Total People in frame = {len(coords)}")
-            print(f"Number of people in queue = {num_people}")
+            print(str.format("Total People in frame = {0}", len(coords)))
+            print(str.format("Number of people in queue = {0}", num_people))
             out_text = ""
             y_pixel = 25
 
             for k, v in num_people.items():
-                out_text += f"No. of People in Queue {k} is {v} "
+                out_text += str.format("No. of People in Queue {0} is {1} ", k, v)
                 if v >= int(max_people):
-                    out_text += f" Queue full; Please move to next Queue "
+                    out_text += str.format(" Queue full; Please move to next Queue ")
                 cv2.putText(image, out_text, (15, y_pixel), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2)
                 out_text = ""
                 y_pixel += 40
