@@ -46,6 +46,12 @@ class PersonDetect:
         self.device = device
         self.threshold = threshold
 
+        self.num_requests = 1
+        self.current_request_id = 0
+        self.infer_request_handle = None
+        self.input_blob = None
+
+
         try:
             self.model = IENetwork(self.model_structure, self.model_weights)
         except Exception as e:
@@ -56,24 +62,87 @@ class PersonDetect:
         self.output_name = next(iter(self.model.outputs))
         self.output_shape = self.model.outputs[self.output_name].shape
 
+    def exec_net(self, request_id, frame):
+        """
+        Starts asynchronous inference for specified request.
+        :param request_id: Index of Infer request value. Limited to device capabilities.
+        :param frame: Input image
+        :return: Instance of Executable Network class
+        """
+        self.infer_request_handle = self.net.start_async(
+            request_id=request_id, inputs={self.input_blob: frame})
+        return self.net
+
+    def wait(self, request_id):
+        """
+        Waits for the result to become available.
+        :param request_id: Index of Infer request value. Limited to device capabilities.
+        :return: Timeout value
+        """
+        wait_process = self.net.requests[request_id].wait(-1)
+        return wait_process
+
     def load_model(self):
-        raise NotImplementedError
+        plugin = IECore()
+        self.net = plugin.load_network(network=self.net, device_name="CPU", num_requests=self.num_requests)
 
 
     def predict(self, image):
-        raise NotImplementedError
+        """
+        Starts asynchronous inference for specified request and wait for result.
+        :param image: Input image
+        :return: Image with bounding boxes (or not?)
+        """
+        inf_start = time.time()
+        self.net.exec_net(self.current_request_id, image)
+        # Wait for the result
+        if self.net.wait(self.current_request_id) == 0:
+            det_time = time.time() - inf_start
+            print("detection time", det_time)
+            # Results of the output layer of the network
+            network_result = self.net.get_output(self.current_request_id)
+            bounding_boxes = self.preprocess_outputs(network_result)
+            return self.draw_outputs(bounding_boxes, image)
 
 
     def draw_outputs(self, coords, image):
-        raise NotImplementedError
+        """
+        Draw bounding boxes on image.
+
+        :param coords: coordinates of bounding box corners
+        :param image: image to process
+        :return: bounding boxes list and processed and frame
+        """
+        image_width = image.get(1)
+        image_height = image.get(0)
+
+        boxes_result = []
+        result_image = image
+        for coords_set in coords[0][0]:
+            # Draw bounding box for object
+            xmin = int(coords_set[3] * image_width)
+            ymin = int(coords_set[4] * image_height)
+            xmax = int(coords_set[5] * image_width)
+            ymax = int(coords_set[6] * image_height)
+            result_image = cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 55, 255), 1)
+        return boxes_result, result_image
 
 
     def preprocess_outputs(self, outputs):
+        # Pass bounding box for object when it's probability is more than the specified threshold
         raise NotImplementedError
 
 
     def preprocess_input(self, image):
-        raise NotImplementedError
+        # Load the network to IE plugin to get shape of input layer
+        n, c, h, w = self.net.load_model(args.model, args.device, 1, 1,
+                                              self.current_request_id, args.cpu_extension)[1]
+        # Change data layout from HWC to CHW
+        result_image = cv2.resize(image, (self.input_shape[1], self.input_shape[2]))
+        result_image = result_image.transpose((2, 0, 1))
+        result_image = result_image.reshape((n, c, h, w))
+        # Return preprocessed image
+        return result_image
 
 
 def main(args):
